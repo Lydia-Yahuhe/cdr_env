@@ -1,4 +1,6 @@
 from __future__ import annotations
+
+import time
 from dataclasses import dataclass
 
 from typing import List, Dict, Tuple
@@ -297,9 +299,11 @@ class AircraftAgent:
 
     def step(self, now: int):
         if self.is_finished():  # 如果该航班飞行已经结束，则直接return
-            return False
+            return False, 0.0, 0.0, 0.0
 
+        c_time = p_time = s_time = 0.0
         if self.is_enroute():
+            start = time.time()
             status, profile, control = self.status, self.profile, self.control
             control.update(now,
                            status.vSpd,
@@ -307,18 +311,25 @@ class AircraftAgent:
                            status.alt,
                            status.heading,
                            profile.courseToTarget)
+            c_time = time.time() - start
+
+            start = time.time()
             status.update(control.targetHSpd,
                           control.targetCourse,
                           control.targetAlt)
+            s_time = time.time() - start
+
+            start = time.time()
             if not profile.update(status.hSpd,
                                   status.heading,
                                   status.performance,
                                   status.location):
                 self.phase = 'Finished'
+            p_time = time.time() - start
         elif now == self.fpl.startTime:  # 如果当前时刻为起飞时刻，则状态改为EnRoute
             self.phase = 'EnRoute'
 
-        return self.is_enroute()
+        return self.is_enroute(), c_time, s_time, p_time
 
     def assign_cmd(self, cmd_list: List[ATCCmd]):
         self.control.assign(cmd_list)
@@ -362,6 +373,9 @@ class AircraftAgentSet:
         duration -= now * int(basic)
         agents = self.agents
 
+        sum1 = 0.0
+        sum2 = 0.0
+        sum3 = 0.0
         points = []
         for i in range(duration):
             clock = now + i + 1
@@ -369,23 +383,24 @@ class AircraftAgentSet:
             points = []
             for agent_id in self.__pre_do_step(clock):
                 agent = agents[agent_id]
-
-                if agent.step(clock):
+                ok, c_time, s_time, p_time = agent.step(clock)
+                sum1 += c_time
+                sum2 += s_time
+                sum3 += p_time
+                if ok:
                     agent_id_en.append(agent_id)
-                    points.append((agent_id, ) + agent.state())
+                    # points.append((agent_id, ) + agent.state())
             self.agent_id_en = agent_id_en
-
         self.time = now + duration
-        return points
+        return points, sum1, sum2, sum3
 
     def __build_rtree(self):
         agent_id_en = self.agent_id_en
         agents = self.agents
-
         idx = Index(properties=Property(dimension=3))
         for i, a_id in enumerate(agent_id_en):
             agent = agents[a_id]
-            idx.insert(i, make_bbox_3d(agent.position(), ext=(0.0, 0.0, 0.0)))
+            idx.insert(i, make_bbox_3d(agent.position(), (0.0, 0.0, 0.0)))
         return idx, agents, agent_id_en
 
     def get_states(self, conflict_acs, length=20, ext=(0.5, 0.5, 900.0)):
@@ -425,7 +440,9 @@ class AircraftAgentSet:
         return states
 
     def detect(self, search=None):
+        start = time.time()
         r_tree, agents, agent_id_en = self.__build_rtree()
+        build = time.time() - start
 
         if len(agent_id_en) <= 1:
             return []
@@ -434,23 +451,20 @@ class AircraftAgentSet:
 
         conflicts = []
         check_list = []
+        sum1 = 0.0
         for a0_id in search:
             a0 = agents[a0_id]
             if not a0.is_enroute():
                 continue
-
             pos0 = a0.position()
-            bbox = make_bbox_3d(pos0, (0.1, 0.1, 299))
-            for i in r_tree.intersection(bbox):
+            for i in r_tree.intersection(make_bbox_3d(pos0, (0.1, 0.1, 299))):
                 a1_id = agent_id_en[i]
-
                 c_id = a0_id + '-' + a1_id
                 if a0_id == a1_id or c_id in check_list:
                     continue
 
                 a1 = agents[a1_id]
                 pos1 = a1.position()
-
                 h_dist = distance(pos0[:2], pos1[:2])
                 v_dist = abs(pos0[2] - pos1[2])
                 if h_dist < 10000 and v_dist < 300.0:
@@ -463,4 +477,5 @@ class AircraftAgentSet:
                                               pos0=pos0,
                                               pos1=pos1))
                 check_list.append(a1_id + '-' + a0_id)
-        return conflicts
+
+        return conflicts, build, sum1

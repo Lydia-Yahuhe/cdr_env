@@ -126,6 +126,16 @@ class FlightPlan:
     min_alt: float
     max_alt: float
 
+    def to_dict(self):
+        return dict(id=self.id,
+                    startTime=self.startTime,
+                    min_alt=self.min_alt,
+                    max_alt=self.max_alt,
+                    register=self.aircraft.id,
+                    type=self.aircraft.aircraftType.id,
+                    route=self.routing.id,
+                    wpt_list=[wpt.id for wpt in self.routing.wpt_list])
+
 
 @dataclass
 class DataSet:
@@ -152,6 +162,12 @@ class Conflict:
 
     def __str__(self):
         return '%12s, %5d, %0.1f, %0.1f' % (self.id, self.time, self.hDist, self.vDist)
+
+    def to_dict(self):
+        return dict(id=self.id,
+                    time=self.time,
+                    h_dist=self.hDist,
+                    v_dist=self.vDist)
 
     def printf(self):
         fpl0, fpl1 = self.fpl0, self.fpl1

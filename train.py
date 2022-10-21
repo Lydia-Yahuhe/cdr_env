@@ -31,7 +31,7 @@ def args_parse():
     parser.add_argument('--density', default=1, type=float)  # 8
     parser.add_argument('--suffix', default='test', type=str)  # 8
 
-    parser.add_argument("--render", default=True, type=bool)
+    parser.add_argument("--render", default=False, type=bool)
     parser.add_argument("--load_path", default=None, type=str)
     parser.add_argument("--save_interval", default=1000, type=int)
     parser.add_argument('--step_before_train', default=1000, type=int)
@@ -40,8 +40,11 @@ def args_parse():
 
 
 def make_exp_id(args):
-    return 'exp_{}_{}_{}_{}_{}_{}_{}_{}_{}'.format(args.inner_iter, args.a_lr, args.c_lr, args.batch_size,
-                                                   args.A, args.c_type, args.x, args.density, args.suffix)
+    return 'exp_{}_{}_{}_{}_{}_{}_{}_{}_{}'.format(args.inner_iter,
+                                                   args.a_lr, args.c_lr,
+                                                   args.batch_size,
+                                                   args.A, args.c_type, args.x, args.density,
+                                                   args.suffix)
 
 
 def train():

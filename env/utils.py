@@ -94,7 +94,7 @@ def high(a: Tuple[float, float], b: Tuple[float, float], c: Tuple[float, float])
     return 2 * area(a, b, c) / distance(b, c)
 
 
-def pnpoly(vertices: Tuple[float], p: Tuple[float, float]) -> bool:
+def pnpoly(vertices: Tuple[Tuple[float, float]], p: Tuple[float, float]) -> bool:
     """
     判断一个2维点（p）是否在一个不规则多边形（vertices）内，3维是否可用尚未验证
     """

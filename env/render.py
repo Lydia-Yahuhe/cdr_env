@@ -253,6 +253,12 @@ def add_lines_on_base_map(lines, image, color=(255, 0, 255), display=True, thick
 # ---------
 # simplekml
 # ---------
+
+
+def make_color(red, green, blue):
+    return simplekml.Color.rgb(red, green, blue, 100)
+
+
 def make_random_color():
     r = random.randint(0, 255)
     g = random.randint(0, 255)
@@ -281,16 +287,18 @@ def plot_point(kml, point, name='point', hdg=None, description=None):
         point.style.iconstyle.heading = (hdg + 270) % 360
 
 
-def draw(tracks, plan, save_path='agent_set'):
+def draw(tracks=None, plan=None, save_path='simplekml'):
     kml = simplekml.Kml()
 
-    folder = kml.newfolder(name='real')
-    for key, points in tracks.items():
-        plot_line(folder, points, name=key, color=simplekml.Color.chocolate)
+    if tracks is not None:
+        folder = kml.newfolder(name='real')
+        for key, points in tracks.items():
+            plot_line(folder, points, name=key, color=simplekml.Color.chocolate)
 
-    folder = kml.newfolder(name='plan')
-    for key, points in plan.items():
-        plot_line(folder, points, name=key, color=simplekml.Color.royalblue)
+    if plan is not None:
+        folder = kml.newfolder(name='plan')
+        for key, points in plan.items():
+            plot_line(folder, points, name=key, color=simplekml.Color.royalblue)
 
     print("Save to " + save_path + ".kml successfully!")
     kml.save(save_path + '.kml')

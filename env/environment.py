@@ -20,10 +20,10 @@ class ConflictScenario:
         self.A: int = A  # 变量2：空域范围（4——1/4空域）
         self.c_type: str = c_type  # 冲突解脱类型（conc——同时解脱，pair——两两解脱）
 
-        self.agent_set: AircraftAgentSet = AircraftAgentSet(fpl_list=info['fpl_list'], candi=info['candi'])
-        self.agent_set.step(1)
-        self.ghost: AircraftAgentSet = AircraftAgentSet(other=self.agent_set)
-        self.ghost.step(300)
+        self.shin: AircraftAgentSet = AircraftAgentSet(fpl_list=info['fpl_list'], candi=info['candi'])
+        self.shin.step(1)
+        self.kage: AircraftAgentSet = AircraftAgentSet(other=self.shin)  # 真：しん（shin），影：かげ（kage）
+        self.kage.step(300)
 
         self.conflict_acs_seq: List[List[str]] = []
         self.conflict_acs: List[str] = []
@@ -31,7 +31,7 @@ class ConflictScenario:
         self.record: Dict[str, object] = {}
 
     def now(self) -> int:
-        return self.agent_set.time
+        return self.shin.time
 
     def __get_conflict_ac(self, conflicts: List[Conflict]):
         if len(conflicts) == 1:
@@ -63,25 +63,25 @@ class ConflictScenario:
 
         return [list(set(lst)) for lst in conflict_acs if len(lst) > 0]
 
-    def run(self, duration=1):
+    def next(self, duration=5):
         if len(self.conflict_acs_seq) > 0:
             self.conflict_acs = self.conflict_acs_seq.pop(0)
             assert len(self.conflict_acs) >= 0
-            return self.__get_states(a_set0=self.agent_set, a_set1=self.ghost)
+            return self.__get_states(a_set0=self.shin, a_set1=self.kage)
 
         while True:
-            self.agent_set.step(duration)
-            self.ghost.step(duration)
+            self.shin.step(duration)
+            self.kage.step(duration)
 
-            conflicts = self.ghost.detect()
+            conflicts = self.kage.detect()
             if len(conflicts) <= 0:
-                if self.agent_set.is_done():
+                if self.shin.is_done():
                     return None
                 continue
 
             if self.x > 0 and self.c_type == 'conc':
-                ghost = AircraftAgentSet(other=self.ghost)
-                for i in range(self.ghost.time + self.x):
+                ghost = AircraftAgentSet(other=self.kage)
+                for i in range(self.kage.time + self.x):
                     ghost.step(duration)
                     conflicts += ghost.detect()
 
@@ -89,19 +89,17 @@ class ConflictScenario:
             self.conflict_acs_seq = self.__get_conflict_ac(conflicts)
             self.conflict_acs = self.conflict_acs_seq.pop(0)
 
-            return self.__get_states(a_set0=self.agent_set, a_set1=self.ghost)
+            return self.__get_states(a_set0=self.shin, a_set1=self.kage)
 
     def step(self, actions):
-        a_set_copy = AircraftAgentSet(other=self.agent_set)
+        shin_copy = AircraftAgentSet(other=self.shin)
         now = self.now()
-
         # 解析、分配动作
-        cmd_info = self.__assign_cmd(now + 30, actions, agents=a_set_copy.agents)
+        cmd_info = self.__assign_cmd(now + 30, actions, agents=shin_copy.agents)
         # 检查动作的解脱效果，并返回下一部状态
-        is_solved, next_states = self.__check_cmd_effect(now, a_set=a_set_copy)
+        is_solved, next_states = self.__check_cmd_effect(now, a_set=shin_copy)
         # 根据指令和解脱效果，计算奖励
         reward = self.__calc_reward(is_solved, cmd_info, operator=min)
-
         return next_states, reward, is_solved, {}
 
     def __get_states(self, a_set0: AircraftAgentSet, a_set1: AircraftAgentSet):
@@ -128,9 +126,10 @@ class ConflictScenario:
         tracks = {}
         conflicts = []
         is_solved = True
-        while a_set_copy.time < now + 2 * 300:
-            tracks[a_set_copy.time] = a_set_copy.step(5)
-            if a_set_copy.time == now + 300:
+        while True:
+            clock = a_set_copy.time
+            tracks[clock] = a_set_copy.step(5)
+            if clock == now + 300:
                 self.ghost = AircraftAgentSet(other=a_set_copy)
 
             conflicts = a_set_copy.detect(search=self.conflict_acs)
@@ -138,12 +137,15 @@ class ConflictScenario:
                 is_solved = False
                 break
 
+            if clock < now + 2 * 300:
+                break
+
         if is_solved:
             self.agent_set = a_set
         self.record.update({'result': is_solved,
                             'tracks': tracks,
                             'f_conflicts': conflicts})
-        return is_solved, self.__get_states(a_set0=self.ghost, a_set1=a_set)
+        return is_solved, self.__get_states(a_set0=self.kage, a_set1=a_set)
 
     def __calc_reward(self, solved: bool, cmd_info, operator=None):
         rewards = []
@@ -187,7 +189,7 @@ class ConflictEnv(gym.Env):
         if change:
             self.idx = (self.idx + 1) % len(self.train_set)
             self.scenario = ConflictScenario(self.train_set[self.idx], **self.kwargs)
-        return self.scenario.run()
+        return self.scenario.next()
 
     def step(self, actions):
         return self.scenario.step(actions)
