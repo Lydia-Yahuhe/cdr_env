@@ -107,14 +107,34 @@ class Aircraft:
 
 
 @dataclass
+class Segment:
+    start: Waypoint
+    end: Waypoint
+    distance: float = 0
+    course: float = 0
+
+    def __post_init__(self):
+        self.distance = self.start.distance_to(self.end)
+        self.course = self.start.bearing_to(self.end)
+
+    def copy(self):
+        return Segment(self.start, self.end)
+
+
+@dataclass
 class Routing:
     id: str
     wpt_list: List[Waypoint]
+    segments: List[Segment] = None
+
+    def __post_init__(self):
+        wpt_list = self.wpt_list
+        self.segments = [Segment(wpt_list[i], p) for i, p in enumerate(wpt_list[1:])]
 
     def copy(self, section=None):
         if section is None:
-            return Routing(self.id, self.wpt_list)
-        return Routing(self.id, [self.wpt_list[i] for i in section])
+            return Routing(self.id, self.wpt_list, self.segments)
+        return Routing(self.id, [self.wpt_list[i] for i in section], self.segments)
 
 
 @dataclass

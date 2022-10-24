@@ -1,1 +1,1 @@
-# Environment for conflict detection and resolution (CDR)# 版本更新记录## v1.0.x* v1.0.0：初始上传版本（有bug）；* v1.0.1  1. 修改make_scenarios；
+# Environment for conflict detection and resolution (CDR)# 版本更新记录## v1.0.x* v1.0.0：初始上传版本（有bug）；* v1.0.1  1. 修改make_scenarios；* v1.0.2  1. 将FlightLeg类修改为Segment类，并在Routing类中增加segments属性；  2. 整合Status、Profile和Control三个类；

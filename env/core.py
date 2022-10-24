@@ -8,8 +8,8 @@ from typing import List, Dict, Tuple
 import numpy as np
 from rtree.index import Index, Property
 
-from .utils import make_bbox_3d, distance, position_in_bbox, calc_level, calc_turn_prediction, border_float
-from .model import Point2D, FlightPlan, Routing, Waypoint, Performance, AircraftType, Conflict
+from .utils import make_bbox_3d, distance, position_in_bbox, calc_level, calc_turn_prediction
+from .model import Point2D, FlightPlan, Routing, Waypoint, Performance, AircraftType, Conflict, Segment
 
 CmdCount = 6
 
@@ -118,7 +118,7 @@ class FlightControl(object):
             return
 
         delta: float = hdg_cmd.delta
-        if delta == 0 or diff == 240:  # 结束偏置（dogleg机动）
+        if delta == 0 or diff == 240:  # 结束偏置（dogseg机动）
             self.targetCourse = hdg_to_target
             self.hdgCmd = None
         elif diff == 0:  # 以delta角度出航
@@ -139,70 +139,49 @@ class FlightControl(object):
 # Profile
 # ---------
 @dataclass
-class FlightLeg:
-    start: Waypoint
-    end: Waypoint
-    distance: float = 0
-    course: float = 0
-
-    def __post_init__(self):
-        self.distance = self.start.distance_to(self.end)
-        self.course = self.start.bearing_to(self.end)
-
-    def copy(self):
-        return FlightLeg(self.start, self.end)
-
-
-@dataclass
 class FlightProfile:
-    def __init__(self, fpl: FlightPlan):
-        self.route: Routing = fpl.routing
-        self.legs: List[FlightLeg] = self.__make_legs()
+    def __init__(self, route: Routing):
+        self.segs: List[Segment] = route.segments
         self.idx: int = 0
-        self.cur_leg: FlightLeg = self.legs[0]
+        self.cur_seg: Segment = self.segs[0]
         self.distToTarget: float = 0
         self.courseToTarget: float = 0
 
-    def __make_legs(self) -> List[FlightLeg]:
-        wpt_list = self.route.wpt_list
-        return [FlightLeg(wpt_list[i], p) for i, p in enumerate(wpt_list[1:])]
-
-    def update(self, h_spd: float, heading: float, performance: Performance, location: Point2D) -> bool:
-        if self.__target_passed(h_spd, heading, performance):
+    def update(self, h_spd: float, heading: float, turn_rate: float, location: Point2D) -> bool:
+        if self.__target_passed(h_spd, heading, turn_rate):
             self.idx += 1
-            self.cur_leg = self.__next_n_leg(0)
-            if self.cur_leg is None:  # 如果curLeg是None，则飞行计划结束
+            self.cur_seg = self.__next_n_seg(0)
+            if self.cur_seg is None:  # 如果cur seg是None，则飞行计划结束
                 return False
-            self.distToTarget = self.cur_leg.distance
-            self.courseToTarget = self.cur_leg.course
+            self.distToTarget = self.cur_seg.distance
+            self.courseToTarget = self.cur_seg.course
         else:
-            target: Point2D = self.cur_leg.end.location
+            target: Point2D = self.cur_seg.end.location
             self.distToTarget = location.distance_to(target)
             self.courseToTarget = location.bearing_to(target)
-
         return True
 
-    def __next_n_leg(self, n: int):
+    def __next_n_seg(self, n: int):
         idx: int = self.idx + n  # 若总共9个航段，则idx ∈ [0,8]
-        return self.legs[idx] if idx <= len(self.legs) - 1 else None
+        return self.segs[idx] if idx <= len(self.segs) - 1 else None
 
-    def __target_passed(self, h_spd: float, heading: float, performance: Performance) -> bool:
+    def __target_passed(self, h_spd: float, heading: float, turn_rate: float) -> bool:
         dist: float = self.distToTarget
         if dist <= h_spd * 1:
             return True
-        next_leg: FlightLeg = self.__next_n_leg(1)
-        if next_leg is not None:
+
+        next_seg: Segment = self.__next_n_seg(1)
+        if next_seg is not None:
             return dist <= calc_turn_prediction(h_spd,
-                                                self.cur_leg.course,
-                                                next_leg.course,
-                                                performance.normTurnRate)
+                                                self.cur_seg.course,
+                                                next_seg.course,
+                                                turn_rate)
         return 270 > (heading - self.courseToTarget) % 360 >= 90
 
     def set(self, other: FlightProfile):
-        self.route = other.route
-        self.legs = other.legs
+        self.segs = other.segs
         self.idx = other.idx
-        self.cur_leg = other.cur_leg
+        self.cur_seg = other.cur_seg
         self.distToTarget = other.distToTarget
         self.courseToTarget = other.courseToTarget
 
@@ -228,19 +207,26 @@ class FlightStatus:
         self.__update_performance()
 
     def __move_horizontal(self, target_h_spd: float, target_hdg: float):
+        # h_spd
         pre_h_spd: float = self.hSpd
         if pre_h_spd > target_h_spd:
             self.hSpd = max(pre_h_spd - self.acType.normDeceleration * 1, target_h_spd)
         elif pre_h_spd < target_h_spd:
             self.hSpd = min(pre_h_spd + self.acType.normAcceleration * 1, target_h_spd)
-        diff: float = (target_hdg - self.heading) % 360
-        diff = diff - 360 if diff > 180 else diff
-        if abs(diff) >= 90:
-            turn: float = self.performance.maxTurnRate * 1
-        else:
-            turn: float = self.performance.normTurnRate * 1
-        diff = border_float(diff, -turn, turn)
-        self.heading = (self.heading + diff) % 360
+
+        # heading
+        pre_hdg = self.heading
+        diff: float = (target_hdg - pre_hdg) % 360
+        if diff != 0.0:
+            diff = diff - 360 if diff > 180 else diff
+            if abs(diff) >= 90:
+                turn: float = self.performance.maxTurnRate * 1
+            else:
+                turn: float = self.performance.normTurnRate * 1
+            diff = min(max(diff, -turn), turn)
+            self.heading = (pre_hdg + diff) % 360
+
+        # location
         self.location.move_to(self.heading, (pre_h_spd + self.hSpd) * 1 / 2)
 
     def __move_vertical(self, target_alt: float):
@@ -283,7 +269,7 @@ class AircraftAgent:
         self.phase: str = 'Schedule'
         self.control = FlightControl(fpl)
         self.status = FlightStatus(fpl)
-        self.profile = FlightProfile(fpl)
+        self.profile = FlightProfile(fpl.routing)
 
     def is_enroute(self):
         return self.phase == 'EnRoute'
@@ -322,7 +308,7 @@ class AircraftAgent:
             start = time.time()
             if not profile.update(status.hSpd,
                                   status.heading,
-                                  status.performance,
+                                  status.performance.normTurnRate,
                                   status.location):
                 self.phase = 'Finished'
             p_time = time.time() - start

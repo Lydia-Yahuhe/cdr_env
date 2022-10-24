@@ -175,8 +175,9 @@ def run_scenario(fpl_list, candi):
             all_conflicts += conflicts
 
         if now % 1000 == 0:
-            print('\t>>>', now, len(agent_set.agent_id_en), len(all_conflicts))
-            print('\t\t>>>', step_sum, detect_sum, build_sum, compair_sum, compute_sum)
+            # print('\t>>>', now, len(agent_set.agent_id_en), len(all_conflicts))
+            # print('\t\t>>>', step_sum, detect_sum, build_sum, compair_sum, compute_sum)
+            print('{},{},{},{},{}'.format(step_sum, detect_sum, build_sum, compair_sum, compute_sum))
             step_sum = 0.0
             detect_sum = 0.0
             build_sum = 0.0
